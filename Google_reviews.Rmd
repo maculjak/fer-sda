@@ -1,0 +1,71 @@
+---
+title: "Google reviews"
+author: "Slučajni šumari"
+date: '02 05 2020 '
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(dplyr)
+library(corrplot)
+library(ggplot2)
+library(reshape2)
+library(GGally)
+library(ggraph)
+library(igraph)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Učitavanje podataka i deskriptivna statistika
+
+```{r readdata}
+df <- read_csv("data.csv")
+```
+```{r}
+df[df == 0] <- NA
+head(df)
+glimpse(df)
+summary(df)
+df
+```
+
+
+```{r fig.width=20, fig.height=28}
+ggplot(melt(df), aes(x="", y=value)) +
+  geom_boxplot() +
+  facet_wrap(~variable, ncol = 4, nrow = 6) +
+  theme(strip.text.x = element_text(size = 20, face = "bold"))
+```
+```{r}
+corr <- cor(df[-1], use="pairwise.complete.obs")
+```
+```{r}
+corr
+```
+
+```{r fig.height = 20, fig.width=20}
+corrplot(corr)
+
+```
+```{r}
+corr %>%
+  as.data.frame() %>%
+  mutate(var1 = rownames(.)) %>%
+  gather(var2, value, -var1) %>%
+  arrange(desc(value)) %>%
+  group_by(value) %>%
+  dplyr::filter(row_number()==1 & var1 != var2) -> corrs
+```
+
+```{r}
+corrs %>% dplyr::filter(abs(value) > 0.3) %>% graph_from_data_frame -> corrs_graph
+```
+```{r fig.height = 6, fig.width = 6}
+ggraph(corrs_graph, "linear", circular = T) + 
+    geom_edge_arc2(aes(edge_alpha = tan(abs(value)), edge_width = abs(value), color = value)) +
+    geom_node_point(size = 2) +
+    geom_node_text(aes(label = name), vjust = 1, hjust = 1) + guides(edge_alpha = "none", edge_width = "none") +
+  scale_edge_colour_gradientn(limits = c(-1, 1), colors = c("firebrick2", "dodgerblue2")) + theme_void() 
+```
+
