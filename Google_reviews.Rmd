@@ -1,6 +1,6 @@
 ---
 title: "Analiza korisničkih ocjena sadržaja"
-author: "Slučajni šumari"
+author: "Slučajni Šumari"
 header-includes:
   - \usepackage[croatian]{babel}
   - \usepackage{chngcntr}
@@ -197,7 +197,7 @@ Iz provedenog t-testa uočavamo da je p vrijedost izuzetno malena, stoga hipotez
 ```{r, warning=FALSE}
 wilcox.test(df$parks, df$theatres, conf.level = 0.95, var.equal = T,  paired = T)
 ```
-Nakon provođenja Wilcoxonovog testa dobivamo jednake rezultate kao i u t-testu, dakle odbacujemo nultu hipotezu.
+Nakon provođenja Wilcoxonova testa dobivamo jednake rezultate kao i u t-testu, dakle odbacujemo nultu hipotezu.
 
 ```{r, warning=FALSE}
 ks.test(df$parks, df$theatres, conf.level = 0.95, var.equal = T,  paired = T)

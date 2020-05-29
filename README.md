@@ -1,0 +1,2 @@
+# fer-sda
+This repository contains project made as a part of *Statistical Data Analysis* course at Faculty of Electrical Engineering and Computing, University of Zagreb. In the project we analyzed a dataset comprised of reviews of 5456 users. For each user there are at most 25 reviewed categories. The reviews range from 0 to 5 where 0 means that user didn't review a certain category. The entire analysis has been done in R. There is only a Croatian version of the project, although the English version could be made upon request.
