@@ -1,11 +1,20 @@
 ---
-title: "Google reviews"
+title: "Analiza korisničkih ocjena sadržaja"
 author: "Slučajni šumari"
-date: '02 05 2020 '
-output: pdf_document
+header-includes:
+  - \usepackage[croatian]{babel}
+  - \usepackage{chngcntr}
+  - \counterwithin{figure}{section}
+  - \usepackage{interval}
+output: 
+  pdf_document:
+    toc: true
+    number_sections: true
+    fig_caption: yes
+    
 ---
 
-```{r setup, include=FALSE}
+```{r, warning=FALSE, setup, include=FALSE}
 library(tidyverse)
 library(dplyr)
 library(corrplot)
@@ -15,45 +24,100 @@ library(GGally)
 library(ggraph)
 library(igraph)
 library(ggExtra)
+library(caret)
+library(ggcorrplot)
+library(BSDA)
+library(MASS)
+library(ggpubr)
 knitr::opts_chunk$set(echo = TRUE)
 ```
+\newpage
+# Uvod
+U današnje vrijeme, kada su ljudi potpuno umreženi i kada tehnologija napreduje svakodnevno, informacija je postala najjače oružje u svijetu. Velikim korporacijama poput Amazona, Googlea, Applea i sličnih cilj je što više doprijeti do korisnika i što uspješnije predvidjeti njihove potrebe i preferencije. Kako bi što uspješnije predvidjeli hoće li se određeni proizvod svidjeti određenom dijelu populacije te kako bi odredili koji dio populacije bi mogao biti potencijalni kupac njihovih usluga, navedene kompanije rade analize ponašanja korisnika na internetu na temelju stranica i sadržaja koje oni gledaju, kupuju, ocjenjuju itd.
+U našem projektu, analizirali smo skup korisničkih ocjena raznog sadržaja. U našem se podatkovnom skupu nalaze ocjene 5456 korisnika tražilice Google. Svaki korisnik ocjenjivao je najviše 25 kategorija. Ocjene za pojedine kategorije poprimaju vrijednost iz intervala [0, 5] pri čemu ocjena 0 označava da korisnik nije ocijenio tu kategoriju.
+U projektu smo uspoređivali odabrane kategorije po ocjenama, analizirali koliko se razlikuju, odredili koje su kategorije najviše polarizirajuće te na kraju pokušali predvidjeti korisničke ocjene na temelju ocjena drugih kategorija, ali i na temelju ocjena drugih korisnika.
+Zbog čega nam je uopće zanimljiva ovakva analiza? Jasno je da ovakva analiza ne bi imala smisla kad bismo svi bili jednaki. Različitost korisničkih preferencija u kojoj je ipak moguće pronaći neke pravilnosti temelj je sustava preporučivanja i personaliziranog oglašavanja. Važno je naglasiti da ovo nije napredna analiza te je cilj ovog projekta upoznati se s metodama statističkog zaključivanja. Naravno, ovakva analiza nije nimalo beskorisna jer je upravo ona bitan korak u gradnji naprednih algoritama i sustava koji se koriste za preporučivanje u komercijalne svrhe.
 
+\newpage
 # Učitavanje podataka i deskriptivna statistika
 
-```{r readdata}
+```{r, warning=FALSE, readdata}
 df <- read_csv("data.csv")
+df_original <- df
 ```
-```{r}
-df[df < 1] <- NA
+
+Ocjene korisnika koje iznose 0 potrebno je elminirati s obzirom na to da one označavaju da korisnik nije ocjenjivao tu kategoriju. Zbog toga su te ocjene zamijenjene s \texttt{NA}.
+
+```{r, warning=FALSE}
+df[df == 0] <- NA
 head(df)
 glimpse(df)
-summary(df)
-df
 ```
 
 
-```{r fig.width=20, fig.height=28}
+
+Deskriptivna statistika nam daje informacije o srednjim vrijednostima ocjena po kategorijama, njihovoj raspršenosti i općenitoj prirodi raspodjele opservacija u uzorku. Spoznaje dobivene naredbom \texttt{summary(df)} vizualizirane su boxplotovima, histogramima i density plotovima prikazanima na slikama \ref{bp}, \ref{hist}, \ref{dp}.
+
+```{r, warning=FALSE, fig.width=12, fig.height=15, , fig.cap="\\label{bp}Boxplotovi ocjena u svakoj kategoriji"}
+
 ggplot(melt(df), aes(x="", y=value)) +
-  geom_boxplot() +
+  stat_boxplot(geom='errorbar', linetype = 1, width = 0.5) +
+  geom_boxplot(fill = "steelblue", color = "steelblue4") +
   facet_wrap(~variable, ncol = 4, nrow = 6) +
-  theme(strip.text.x = element_text(size = 20, face = "bold"))
+  theme_minimal() +
+  theme(strip.text.x = element_text(size = 12)) +
+  xlab("") +
+  ylab("")
 ```
-```{r}
-corr <- cor(df[-1], use="pairwise.complete.obs")
+```{r, warning=FALSE}
 ```
 
-```{r fig.height = 12, fig.width = 12}
+```{r, warning=FALSE, fig.height = 12, fig.width = 12, fig.cap="\\label{hist}Histogrami ocjena u svakoj kategoriji"}
 ggplot(melt(df), aes(x = value)) + 
-  geom_histogram(breaks = seq(1, 5, 1)) +
-  facet_wrap(~variable, ncol = 4, nrow = 6)
+  geom_histogram(binwidth = 0.25, fill = "steelblue", 
+                 color = "steelblue4", aes(label=..count..)) +
+  facet_wrap(.~variable, ncol = 4, nrow = 6) + theme_minimal() + 
+  theme(strip.text.x = element_text(size = 12))
+```
+```{r, warning=FALSE, fig.height = 12, fig.width = 12, fig.cap="\\label{dp}Density plotovi ocjena u svakoj kategoriji"}
+ggplot(melt(df), aes(x = value)) + 
+  geom_density(fill = "steelblue", color = "steelblue4", alpha = 0.5) +
+  facet_wrap(.~variable, ncol = 4, nrow = 6) + theme_minimal() + 
+  theme(strip.text.x = element_text(size = 12))
 ```
 
-```{r fig.height = 20, fig.width=20}
+```{r, warning=FALSE, fig.height = 12, fig.width = 12, fig.cap="\\label{qq}QQ-plotovi ocjena u svakoj kategoriji"}
+ggplot(melt(df), aes(sample = value)) + 
+  stat_qq(color = "steelblue", shape=1) +
+  facet_wrap(.~variable, ncol = 4, nrow = 6) + theme_minimal() + 
+  theme(strip.text.x = element_text(size = 12))
+```
+
+
+\newpage
+Iz QQ-plotova prikazanih slikom \ref{qq} vidimo da niti jedna kategorija nema normalnu razdiobu svojih ocjena jer niti jedan QQ-plot nije ni približno linearna funkcija. Ovo nam može biti problem pri provođenju neparametarskih statističkih testova, međutim ovaj problem umanjuje činjenica da se u podatkovnom skupu nalazi dovoljno velik broj podataka.
+
+\newpage
+# Komparativna analiza kategorija ocjenjivanja i inferencijalna statistika
+U ovom potpoglavlju pozabavit ćemo se komparativnom analizom kategorija ocjenjivanja. Drugim riječima pogledat ćemo postoji li povezanost između ocjena različitih kategorija. Sve pretpostavke bit će potvrđene, odnosno opovrgnute primjenom metoda inferencijalne statistike, odnosno odgovarajućim statističkim testovima.
+
+```{r, warning=FALSE, fig.height = 25, fig.width=30, fig.cap="\\label{cp}Matrica korelacija svih parova kategorija ocjenjivanja"}
+corr <- cor(df[-1], use="pairwise.complete.obs")
 col <- colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
-corrplot(corr, method = "color", col = col(200), addCoef.col = "black", order = "FPC")
+ggcorrplot(corr, outline.color = "white", lab = T, 
+           colors = c("violetred4", "white", "steelblue4"),
+           lab_size = 7,
+           hc.order = T,
+           tl.cex = 25) +
+  theme(legend.key.size = unit(1.5, "cm"),
+        legend.text = element_text(size = 20),
+        legend.title = element_text(size = 20))
 
 ```
-```{r}
+
+Na slici \ref{cp} prikazana je matrica korelacija svih parova kategorija ocjenjivanja. Za trenutak ćemo se suzdržati komentiranja korelacija između kategorija budući da u nastavku slijedi vizualno nešto atraktivniji i pregledniji prikaz korelacija parova kategorija: u obliku grafa.
+
+```{r, warning=FALSE}
 corr %>%
   as.data.frame() %>%
   mutate(var1 = rownames(.)) %>%
@@ -63,58 +127,457 @@ corr %>%
   dplyr::filter(row_number()==1 & var1 != var2) -> corrs
 ```
 
-```{r}
+
+```{r, warning=FALSE}
 corrs %>% graph_from_data_frame -> corrs_graph
+
 ```
-```{r fig.height = 8, fig.width = 8}
-ggraph(corrs_graph, "linear", circular = T) + 
-    geom_edge_arc2(aes(edge_alpha = value^4, edge_width = abs(value), color = value)) +
+
+```{r, warning=FALSE, fig.height = 9, fig.width = 9, fig.cap="\\label{graph}Prikaz korelacija parova kategorija ocjenjivanja u obliku grafa"}
+set.seed(100)
+ggraph(corrs_graph, "nicely") + 
+    geom_edge_link(aes(edge_alpha = value^4, edge_width = value^4, color = value)) +
     geom_node_point(size = 2) +
-    geom_node_text(aes(label = name), vjust = -1, hjust = 0) + guides(edge_alpha = "none", edge_width = "none") +
-  scale_edge_colour_gradientn(limits = c(-1, 1), colors = c("firebrick2", "dodgerblue2")) + theme_void() 
+    geom_node_text(aes(label = name), vjust = -1, hjust = 0)+
+    guides(edge_alpha = "none", edge_width = "none") +
+    scale_edge_colour_gradientn(limits = c(-1, 1), 
+                                colors = c("violetred4", "#FFFFFF", "steelblue4")) +
+    theme_void() 
 ```
-```{r}
-plt <- ggplot(df, aes(x = gyms, y = `swimming pools`)) + geom_point()
-ggMarginal(plt, type = "boxplot", col="red")
 
+Gledajući graf na slici \ref{graph} odmah u oči upada poveznica između kategorija \texttt{parks} i \texttt{theatres} čija korelacija kao što možemo iščitati iz korelacijske matrice sa slike \ref{cp} iznosi 0.63. Vrlo je upadljiv i trokut čiji su vrhovi  kategorije \texttt{restaurants}, \texttt{zoo} i \texttt{pubs/bars}. Korelacije parova \texttt{restaurants} i \texttt{zoo}, \texttt{zoo} i \texttt{pubs/bars} te \texttt{pubs/bars} i \texttt{restaurants} iznose redom: 0.54, 0.55 i 0.56. Relativno veliku pozitivnu korelaciju imaju i \texttt{juice bars} i \texttt{hotels/other lodgings}, \texttt{gyms} i \texttt{swimming pools} te \texttt{theatres} i \texttt{museum}. Pozitivne je korelacije lako uočiti, međutim, morat ćemo se malo bolje potruditi kako bismo uočili i negativne korelacije koje su na slici \ref{graph} prikazane crvenim linijama. Najveću negativnu korelaciju imaju kategorije \texttt{malls} i \texttt{view points} i ona iznosi -0.42, ostali parovi kategorija koji su negativno korelirani nemaju značajno veliku apsolutnu vrijednost koeficijenta korelacije. Visoke korelacije navedenih parova kategorija ocjena u skladu su s pretpostavkama do kojih bismo mogli doći zdravim razumom i nema potrebe objašnjavati ih detaljno. U nastavku su za neke parove kategorija statističkim testovima provjerene jednakosti njihovih srednjih vrijednosti i podudarnosti njihovih razdioba. Prije statističkih testova uvijek će biti prikazani density plotovi, histogrami i boxplotovi kategorija koje se uspoređuju.
 
-```
-```{r}
-p=ggplot(df, aes(`swimming pools`, gyms, col="red")) +
-ggtitle("Coolness depending on number of friends") +
-geom_point() +
-theme(legend.position=c(0.13, 0.87),
-plot.title = element_text(hjust=0.5, size=12, face="bold"))
-ggMarginal(p, type="boxplot", col="red")
-
-```
-```{r}
+```{r, warning=FALSE}
 data <- melt(df[c("parks", "theatres")])
-ggplot(data, aes(x=value, fill=variable)) + geom_density(alpha=0.25)
-ggplot(data,aes(x=value, fill=variable)) + geom_histogram(alpha=0.25)
-ggplot(data,aes(x=variable, y=value, fill=variable)) + geom_boxplot()
-t.test(df$parks, df$theatres, conf.level = 0.95)
-var.test(df$parks, df$theatres, conf.level = 0.95)
 ```
 
 
-```{r}
+```{r, warning=FALSE, fig.cap="\\label{d1}Density plotovi kategorija parks i theatres"}
+ggplot(data, aes(x=value, fill=variable)) +
+  geom_density(alpha=0.25) +
+  scale_fill_manual("Kategorija", values = c("violetred4", "steelblue4")) +
+  xlab("Ocjena") + ylab("Gustoća")
+```
+
+
+```{r, warning=FALSE, fig.cap="\\label{h1}Histogrami kategorija parks i theatres"}
+ggplot(data,aes(x=value, fill=variable)) +
+  geom_histogram(alpha=0.25) +
+  scale_fill_manual("Kategorija", values = c("violetred4", "steelblue4")) +
+  xlab("Ocjena") + ylab("Frekvencija")
+```
+
+
+```{r, warning=FALSE,fig.cap="\\label{b1}Boxplotovi kategorija parks i theatres"}
+ggplot(data,aes(x=variable, y=value, fill=variable)) +
+  stat_boxplot(geom='errorbar', linetype = 1, width = 0.5) +
+  geom_boxplot() +
+  scale_fill_manual("Kategorija", values = c("violetred4", "steelblue4")) +
+  xlab("Kategorija") + ylab("ocjena") 
+```
+
+\newpage
+
+Prvi test koji provodimo bit će F test, kojim ćemo provjeravati jesu li varijance kategorija \texttt{parks} i \texttt{theatres} jednake. Ta informacija će nam koristiti prilikom provođenja t-testa jer ćemo znati možemo li koristiti pretpostavku da su varijance ovih kategorija jednake.
+
+```{r, warning=FALSE}
+var.test(df$parks, df$theatres, conf.level = 0.95, paired = T)
+```
+
+Iz provedenog F testa vidimo da se hipoteza o jednakosti varijanci ne može odbaciti na razini značajnosti od 5%, stoga ćemo u t-testu postaviti parametar \texttt{var.equal} na \texttt{True}.
+
+```{r, warning=FALSE}
+
+t.test(df$parks, df$theatres, conf.level = 0.95, var.equal = T,  paired = T)
+
+```
+
+Iz provedenog t-testa uočavamo da je p vrijedost izuzetno malena, stoga hipotezu da su aritmetičke sredine kategorija \texttt{parks} i \texttt{theatres} jednake odbacujemo na razini značajnosti od 5%. U nastavku ćemo provjeriti imaju li te dvije kategorije jednaku razdiobu, što bismo mogli pretpostaviti gledajući sliku \ref{d1}.
+
+```{r, warning=FALSE}
+wilcox.test(df$parks, df$theatres, conf.level = 0.95, var.equal = T,  paired = T)
+```
+Nakon provođenja Wilcoxonovog testa dobivamo jednake rezultate kao i u t-testu, dakle odbacujemo nultu hipotezu.
+
+```{r, warning=FALSE}
+ks.test(df$parks, df$theatres, conf.level = 0.95, var.equal = T,  paired = T)
+```
+
+Rezultati provedenog Kolmogorov-Smirnovljeva idu u prilog odbacivanju hipoteze da kategorije \texttt{parks} i \texttt{theatres} imaju jednaku razdiobu.
+
+
+```{r, warning=FALSE}
 data <- melt(df[c("gyms", "swimming pools")])
-ggplot(data, aes(x=value, fill=variable)) + geom_density(alpha=0.25)
-ggplot(data,aes(x=value, fill=variable)) + geom_histogram(alpha=0.25)
-ggplot(data,aes(x=variable, y=value, fill=variable)) + geom_boxplot()
-
-t.test(df$gyms, df$`swimming pools`)
-
-
 ```
-```{r}
+```{r, warning=FALSE, fig.cap="\\label{d2}Density plotovi kategorija gyms i swimming pools"}
+ggplot(data, aes(x=value, fill=variable)) +
+  geom_density(alpha=0.25) +
+  scale_fill_manual("Kategorija", values = c("violetred4", "steelblue4")) +
+  xlab("Ocjena") + ylab("Gustoća")
+```
+
+
+```{r, warning=FALSE, fig.cap="\\label{h2}Histogrami kategorija gyms i swimming pools"}
+ggplot(data,aes(x=value, fill=variable)) +
+  geom_histogram(alpha=0.25) +
+  scale_fill_manual("Kategorija", values = c("violetred4", "steelblue4")) +
+  xlab("Ocjena") + ylab("Frekvencija")
+```
+
+
+```{r, warning=FALSE,fig.cap="\\label{b2}Boxplotovi kategorija gyms i swimming pools"}
+ggplot(data,aes(x=variable, y=value, fill=variable)) +
+  stat_boxplot(geom='errorbar', linetype = 1, width = 0.5) +
+  geom_boxplot() +
+  scale_fill_manual("Kategorija", values = c("violetred4", "steelblue4")) +
+  xlab("Kategorija") + ylab("ocjena")
+```
+
+\newpage
+
+```{r, warning=FALSE}
+var.test(df$gyms, df$`swimming pools`, paired = T)
+```
+
+I u ovom slučaju možemo koristiti prepostavku da su varijance kategorija \texttt{gyms} i \texttt{swimming pools} jednake.
+
+```{r, warning=FALSE}
+t.test(df$gyms, df$`swimming pools`, paired = T, var.equal = T)
+```
+Nakon provođenja t-testa zaključujemo da na razini značajnosti od 5% ne možemo odbaciti nultu hipotezu, stoga zaključujemo da su aritmetičke sredine ove dvije kategorije jednake.
+
+```{r, warning=FALSE}
+wilcox.test(df$gyms, df$`swimming pools`, paired = T, var.equal = T)
+```
+No, kada koristimo Wilcoxonov test, odbacujemo nultu hipotezu, te za razliku od t-testa ne možemo zaključiti da su aritmetičke sredine ocjena razmatranih kategorija jednake.
+
+
+```{r, warning=FALSE}
+ks.test(df$gyms, df$`swimming pools`, paired = T)
+```
+
+Nakon provođenja Kolmogorov-Smirnovljeva testa možemo odbaciti nultu hipotezu na nivou značajnosti 5%, čime zaključujemo da njihove razdiobe ne podudaraju.
+
+\newpage
+
+```{r, warning=FALSE}
 data <- melt(df[c("pubs/bars", "zoo")])
-ggplot(data, aes(x=value, fill=variable)) + geom_density(alpha=0.25)
-ggplot(data,aes(x=value, fill=variable)) + geom_histogram(alpha=0.25)
-ggplot(data,aes(x=variable, y=value, fill=variable)) + geom_boxplot()
-
-t.test(df$`pubs/bars`, df$zoo)
 ```
+
+```{r, warning=FALSE, fig.cap="\\label{d3}Density plotovi kategorija pubs/bars i zoo"}
+ggplot(data, aes(x=value, fill=variable)) + geom_density(alpha=0.25) + scale_fill_manual("Kategorija", values = c("violetred4", "steelblue4")) + xlab("Ocjena") + ylab("Gustoća")
+```
+
+
+```{r, warning=FALSE, fig.cap="\\label{h3}Histogrami kategorija pubs/bars i zoo"}
+ggplot(data,aes(x=value, fill=variable)) + geom_histogram(alpha=0.25) + scale_fill_manual("Kategorija", values = c("violetred4", "steelblue4")) + xlab("Ocjena") + ylab("Frekvencija")
+```
+
+
+```{r, warning=FALSE,fig.cap="\\label{b3}Boxplotovi kategorija pubs/bars i zoo"}
+ggplot(data,aes(x=variable, y=value, fill=variable)) +  stat_boxplot(geom='errorbar', linetype = 1, width = 0.5) +
+        geom_boxplot() + scale_fill_manual("Kategorija", values = c("violetred4", "steelblue4")) + xlab("Kategorija") + ylab("ocjena")
+```
+
+\newpage
+
+```{r, warning=FALSE}
+var.test(df$`pubs/bars`, df$zoo)
+```
+
+U ovom slučaju ne možemo pretpostaviti da su varijance kategorija \texttt{bars/pubs} i \texttt{zoo} jednake, tako da ta pretpostavka neće biti korištena u t-testu.
+
+```{r, warning=FALSE}
+t.test(df$`pubs/bars`, df$zoo, paired = T)
+```
+Nakon provedenog t-testa odbacujemo nultu hipotezu na nivou značajnosti od 5%, što znači da ove dvije kategorije nemaju jednaku aritmetičku sredinu. 
+
+```{r, warning=FALSE}
+wilcox.test(df$`pubs/bars`, df$zoo, paired = T)
+```
+Kao i u t-testu, u WIlcoxonovom testu odbacujemo nultu hipotezu s vrlo visokom sigurnošću.
+
+```{r, warning=FALSE}
+ks.test(df$`pubs/bars`, df$zoo, paired = T)
+```
+
+Kao što se moglo očekivati iz rezultata prethodna dva testa, i prema Kolmogorov-Smirnovljevu testu odbacujemo nultu hipotezu te zaključujemo da se ove dvije kategorije ne podudaraju po distribuciji. 
+
+\newpage
+
+```{r, warning=FALSE}
+data <- melt(df[c("theatres", "museums")])
+```
+
+
+```{r, warning=FALSE, fig.cap="\\label{d4}Density plotovi kategorija theatres i museums"}
+ggplot(data, aes(x=value, fill=variable)) +
+  geom_density(alpha=0.25) +
+  scale_fill_manual("Kategorija", values = c("violetred4", "steelblue4")) +
+  xlab("Ocjena") + ylab("Gustoća")
+```
+
+
+```{r, warning=FALSE, fig.cap="\\label{h4}Histogrami kategorija theatres i museums"}
+ggplot(data,aes(x=value, fill=variable)) +
+  geom_histogram(alpha=0.25) +
+  scale_fill_manual("Kategorija", values = c("violetred4", "steelblue4")) +
+  xlab("Ocjena") + ylab("Frekvencija")
+```
+
+
+```{r, warning=FALSE,fig.cap="\\label{b4}Boxplotovi kategorija theatres i museums"}
+ggplot(data,aes(x=variable, y=value, fill=variable)) +
+  stat_boxplot(geom='errorbar', linetype = 1, width = 0.5) +
+  geom_boxplot() +
+  scale_fill_manual("Kategorija", values = c("violetred4", "steelblue4")) +
+  xlab("Kategorija") + ylab("ocjena")
+```
+
+\newpage
+
+
+```{r, warning=FALSE}
+var.test(df$theatres, df$museums)
+```
+Iz prethodnog testa možemo vidjeti da se varijance kategorija \texttt{theatres} i \texttt{museums} razlikuju. Stoga u t-testu nećemo koristiti pretpostavku da su one jednake.
+
+
+```{r, warning=FALSE}
+t.test(df$theatres, df$museums, paired = T)
+```
+Nakon provođenja t-testa uočavamo da se nulta hipoteza mora odbaciti, iako bismo iz boxplota na slici \ref{b4} mogli zaključiti da kategorije \texttt{theatres} i \texttt{museums} imaju jednake aritmetičke sredine.  Međutim taj boxplot ukazuje na jednakost njihovih medijana, što možemo provjeriti Moodovim testom. 
+
+```{r, warning=FALSE}
+mood.test(df$theatres, df$museums, paired = T)
+```
+Ipak, provedeni Moodov test rezultirao je relativno malom p-vrijednost, što znači da nultu hipotezu možemo odbaciti.
+
+```{r, warning=FALSE}
+wilcox.test(df$theatres, df$museums, paired = T)
+```
+
+Rezultati Wilcoxonova testa su jednaki kao i za t-test, odbacujemo nultu hipotezu.
+
+```{r, warning=FALSE}
+ks.test(df$theatres, df$museums, paired = T)
+```
+
+Iz rezultatia Kolmogorov-Smirnovljeva testa vidimo da se nulta hipoteza odbacuje, tako da možemo zaključiti da se ni distribucije ove dvije kategorije ne podudaraju.
+```{r, warning=FALSE}
+data <- melt(df[c("pubs/bars", "restaurants")])
+```
+ 
+\newpage
+ 
+```{r, warning=FALSE, fig.cap="\\label{d5}Density plotovi kategorija pubs/bars i restaurants"}
+ggplot(data, aes(x=value, fill=variable)) +
+  geom_density(alpha=0.25) +
+  scale_fill_manual("Kategorija", values = c("violetred4", "steelblue4")) +
+  xlab("Ocjena") + ylab("Gustoća")
+```
+
+
+```{r, warning=FALSE, fig.cap="\\label{d5} Histogrami kategorija pubs/bars i restaurants"}
+ggplot(data, aes(x=value, fill=variable)) +
+  geom_histogram(alpha=0.25) +
+  scale_fill_manual("Kategorija", values = c("violetred4", "steelblue4")) +
+  xlab("Ocjena") + ylab("Frekvencija")
+```
+
+
+```{r, warning=FALSE,fig.cap="\\label{b5} Boxplotovi kategorija pubs/bars i restaurants"}
+ggplot(data,aes(x=variable, y=value, fill=variable)) +
+  stat_boxplot(geom='errorbar', linetype = 1, width = 0.5) +
+  geom_boxplot() +
+  scale_fill_manual("Kategorija", values = c("violetred4", "steelblue4")) +
+  xlab("Kategorija") + ylab("ocjena")
+```
+
+\newpage
+
+Provjerit ćemo još i podudarnost kategorija \texttt{pubs/bars} i \texttt{restaurants}.
+
+```{r, warning=FALSE}
+var.test(df$`pubs/bars`, df$restaurants)
+```
+Mala p-vrijednost dobivena provedenim F-testom ukazuje na odbacivanje hipoteze o jednakosti varijanci razmatranih kategorija.
+
+```{r, warning=FALSE}
+t.test(df$`pubs/bars`, df$restaurants, paired=T)
+```
+```{r, warning=FALSE}
+wilcox.test(df$`pubs/bars`, df$restaurants, paired=T)
+```
+
+Rezultati provedenog t-testa i Wilcoxonova testa ukazuju nam na odbacivanje nulte hipoteze, što znači da kategorije \texttt{pubs/bars} i \texttt{restaurants} neamju jednake aritmetičke sredine. Moodovim testom provjerit ćemo jednakost njihovih medijana. 
+
+
+```{r, warning=FALSE}
+mood.test(df$`pubs/bars`, df$restaurants, paired=T)
+```
+Rezultat provedenog Moodova testa je p-vrijednost koja iznosi 0.2679, što znači da hipotezu o jednakosti medijana razmatranih kategorija ne možemo odbaciti.
+
+Nakon usporedbi odabranih parova kategorija pokušat ćemo utvrditi postoje li kategorije koje su posebno polarizirajuće ili nepolarizirajuće, odnosno one kategorije oko kojih se korisnici najviše ili najmanje slažu. Za mjeru polariziranosti koristit ćemo varijancu. Na slici \ref{vb} uočavamo da je kategorija \texttt{churches} najviše polarizirajuća, što zaključujemo iz činjenice da varijanca te kategorije manja od varijanci svih ostalih kategorija. Jednako tako, možemo vidjeti da je kategorija \texttt{art galleries} najmanje polarizirajuća, jer ima najveću varijancu. 
+
+
+```{r, warning=FALSE, fig.height = 10, fig.width = 10, fig.cap="\\label{vb} Stupčasti dijagram varijanci kategorija"}
+k <- lapply(df[-1], function(x) {var(x[!is.na(x)])})
+ggplot(melt(k), aes(x = reorder(L1, -value), y = value, fill = value)) +
+  geom_bar(stat = "identity") +
+  coord_flip() + xlab("Kategorija") + ylab("Varijanca") +
+  scale_fill_gradient2(mid = "black", high = "violetred4") +
+  theme(legend.position="none")
+```
+
+
+\newpage
+
+# Linearna regresija
+U ovom poglavlju napravljena je regresijska analiza odabranihi parova kategorija. Prva linearna regresija napravljena je nad parom \texttt{gyms} i \texttt{swimming pools}.
+
+```{r, warning=FALSE}
+linmod <- lm(gyms ~ `swimming pools`, df[-1])
+```
+```{r, warning=FALSE}
+summary(linmod)
+```
+```{r, warning=FALSE, fig.cap="\\label{sp1}Vizualizacija linearne regresije kategorija gyms i swimming pools"}
+
+ggplot(df, aes(x = gyms, y = `swimming pools`)) +
+  geom_point(shape = 1) + geom_smooth(method = lm)
+```
+
+Usprkos tome što se gledajući u graf na slici \ref{sp1} čini da su točke razbacane po grafu bez nekog posebnog reda, pravac dobiven linearnom regresijom postiže ukupnu pogrešku od 0.786, što znači da pravac u prosjeku pogriješi za jednu ocjenu pri predikciji ocjene kategorije \texttt{swimming pools} na temelju kategorije \texttt{gyms}. U nastavku ćemo provjeriti je li razdioba reziduala regresijskog pravca normalna.
+
+```{r, warning=FALSE, fig.cap="\\label{qq1} QQ-plot reziduala"}
+ggqqplot(rstandard(linmod), shape=1) +
+  ggtitle("") + xlab("Teoretski kvantil") +
+  ylab("Standardizirani rezidual")
+ks.test(rstandard(linmod),'pnorm')
+```
+Kao što iz qqplota na slici \ref{qq1} i provedenog Kolmogorov-Smirnovljeva testa možemo zaključiti, standardizirani reziduali odstupaju od normalne razdiobe.
+
+
+```{r, warning=FALSE}
+linmod <- lm(`theatres` ~ parks, df[-1])
+```
+```{r, warning=FALSE}
+summary(linmod)
+```
+```{r, warning=FALSE, fig.cap="\\label{sp2} Vizualizacija linearne regresije kategorija theatres i parks"}
+ggplot(df, aes(x = theatres, y = parks)) +
+  geom_point(shape = 1) + geom_smooth(method = lm)
+```
+
+Iako bismo, gledajući u točke na grafu \ref{sp2}, mogli pretpostaviti da će ukupna pogreška predikcije biti manja nego u prethodnom primjeru, dobivena je pogreška od 1.043. Dobiveni regresijski pravac odstupa od pravca koji bismo povući intuitivno, što nimalo ne čudi zbog velikog broja stršećih vrijednosti. Ponovno ćemo provjeriti pripadaju li reziduali regresijskog pravca normalnoj razdiobi.
+
+
+```{r, warning=FALSE, fig.cap="\\label{qq2} QQ-plot reziduala"}
+ggqqplot(rstandard(linmod), shape=1) +
+  ggtitle("") + xlab("Teoretski kvantil") +
+  ylab("Standardizirani rezidual")
+ks.test(rstandard(linmod),'pnorm')
+```
+Reziduali, dakle, ponovno odstupaju od normalne razdiobe.
+
+Sada ćemo pokušati predvidjeti kategoriju \texttt{malls} na temelju kategorija \texttt{view points}, \texttt{zoo} i \texttt{restaurants}. 
+```{r, warning=FALSE}
+linmod <- lm(malls ~ `view points` + zoo + restaurants , df[-1])
+```
+```{r, warning=FALSE}
+summary(linmod)
+```
+Rezultat ove linearne regresije je linearni model čija standardna pogreška iznosi 1.174, što je zadovoljavajuć rezultat ako uzmemo u obzir relativno male korelacije tih kategorija.
+
+```{r, warning=FALSE, fig.cap="\\label{qq3} QQ-plot reziduala", warning=FALSE}
+ggqqplot(rstandard(linmod), shape=1) +
+  ggtitle("") + xlab("Teoretski kvantil") +
+  ylab("Standardizirani rezidual")
+ks.test(rstandard(linmod),'pnorm')
+rstandard(linmod) %>% as_tibble
+```
+Reziduali regresijskog pravca ponovno ne pripadaju normalnoj razdiobi.
+
+
+
+# Komprativna analiza korisnika
+
+
+U nastavku će biti prikazana implementacija algoritma kolaborativnog filtriranja. To je u suštini algoritam koji čini automatizirane predikcije o interesima korisnika na način da prikuplja informacije o interesima velikog broja korisnika. Temeljna pretpostavka algoritma je da ako dva korisnika imaju jednak interes za određeno područje, vjerojatnije je da će imati slična mišljenja na ostalim područjima, u odnosu na neku treću osobu koja nema slične interese kao ove dvije. Algoritam je u vrlo širokoj uporabi u praksi te se najčešće koristi u sustavu preporuka.
+
+```{r, warning=FALSE}
+sim <- function(x, y){
+  sum(x * y) / (norm(x, type = "2") * norm(y, type = "2"))
+}
+
+n_max_idx <- function(row, index, n){
+  row <- row[-1]
+  coscor <- apply(df_numerical, 1, function(x){sim(x, row)})
+  coscor[index] <- 0
+  maxes <- c()
+  for(i in 1:n){
+    idx <- which.max(coscor) 
+    maxes <- c(maxes, idx)
+    coscor[idx] <-  0
+  }
+  maxes
+}
+```
+
+```{r, warning=FALSE}
+df_numerical <- df_original[-1]
+sim(df_original[1, -1], df_original[2, -1])
+```
+
+
+U kodu iznad implementirane su dvije funkcije: \texttt{sim} i \texttt{n_max_idx}. Prva funkcija izračunava kosinusnu sličnost između dva ulazna vektora prema formuli:
+
+$${\text{similarity}} = \cos(\theta )$$
+$$=\frac{\mathbf {A} \cdot \mathbf {B}}{\|\mathbf {A} \|\|\mathbf {B} \|}$$
+$$=\frac {\sum \limits _{i=1}^{n}{A_{i}B_{i}}}{{\sqrt {\sum \limits _{i=1}^{n}{A_{i}^{2}}}}{\sqrt {\sum \limits _{i=1}^{n}{B_{i}^{2}}}}}$$
+
+gdje su $\mathbf {A}$ i $\mathbf {B}$ ulazni vektori. Ona predstavlja kosinus kuta između dva normirana višedimenzionalna vektora te kada su što su oni sličniji vrijednost će biti bliža 1.
+
+Druga funkcija vraća indekse n vektora iz podatkovnog skupa najsličnijih vektoru koji je dobiven na ulazu kao varijabla \texttt{row}.
+
+
+```{r, warning=FALSE}
+row_index <- 500
+test_row <- df_original[row_index, ]
+test_row
+idx <- n_max_idx(test_row, row_index, 20) 
+
+df_original[idx, ]
+```
+U ovom kodu uzeli smo 500. unos iz podatkovnog skupa te smo pozvali funkciju \texttt{n_max_idx} kako bismo pronašli 20 najsličnijih korisnika tome korisniku.
+
+
+```{r, warning=FALSE}
+
+
+df_neighbors <- df_numerical[idx, ]
+corvalues <- apply(df_neighbors, 1, function(x) sim(x, test_row[-1]))
+
+test_gyms <- test_row$`gyms`
+
+
+df_neighbor_gyms <- df_neighbors[ , c("gyms")]
+
+
+prediction <- sum(corvalues * df_neighbor_gyms) / sum(abs(corvalues)) 
+
+"Predikcija:"
+test_gyms
+"Stvarna vrijednost:"
+prediction
+```
+
+
+Kao demonstraciju rada sustava preporuke uzeli smo tih 20 najsličnijih korisnika, izračunali njihovu sličnost s našim testnim vektorom te smo dali predikciju koliko bi iznosila vrijednost kategorije \texttt{gyms} ako bi je izračunali pomoću sličnosti tih 20 korisnika.
+\newpage
+
+# Zaključak
+Primjenom statističkih i vizualizacijskih metoda uspješno smo napravili analizu skupa korisničkih ocjena sadržaja. Na početku smo uočili da ocjene niti jedne kategorije ne pripadaju normalnoj razdiobi. Također, kod promotrimo li histograme kategorija vidimo da su ekstremne ocjene prilično zastupljene u većini kategorija. Dakle, za većinu kategorija imamo velik broj ocjena 5 i veliku koncentraciju ocjena oko 1. Ovo se možemo objasniti pretpostavkom da korisnici ocjenjuju sadržaj koji im je ili jako dobar ili jako loš, dok rijetko daju manje ekstremne ocijene jer o onome što na njih ostavi snažniji dojam, bio on pozitivan ili negativan, više razmišljaju. Kako bi se ova pretpostavka potvrdila potrebno je provesti iscrpnije istraživanje. Provedenom analizom korelacija ocjena parova kategorija i statističkim testovima kojima su testirane njihove srednje vrijednosti dobili smo značajne informacije o preferencijama pojedinih korisnika koje se svakako mogu iskoristiti u daljnjim istraživanjima. U analizi smo koristili F-test, T-test, Kolmogorov-Smirnovljev test, Wilcoxonov test i Moodov test. Razmatrajući varijance ocjena u pojedinim kategorijama utvrdili smo da se korisnici najviše slažu oko ocjena crkvi te da su najviše podijeljeni oko umjetničkih galerija. Činjenica da su crkve najviše polarizirajuća kategorija zanimljiva je s obzirom na to da je religija često predmet rasprave pa je za očekivati da će crkve prouzrokovati podjelu među korisnicima. Zanimljivo je i da crkve imaju vrlo nisku prosječnu ocjenu: 1.51. S druge strane, neslaganje korisnika oko umjetničkih galerija je očekivano zbog toga što je umjetnost, kao i religija stvar osobnih preferencija. Provedenom linearnom regresijom utvrdili smo da, iako su korelacije između pojedinih kategorija relativno male te su njihove ocjene poprilično raspršene, linearni modeli koje smo istrenirali u prosjeku nisu u predikcijama promašivali više od jedne ocjene, što je zadovoljavajuće s obzirom na spomenute spoznaje o ocjenama. Važno je naglasiti da je dobivena pogreška izmjerena na istom podatkovnom skupu koji je korišten za trening modela pa bi se ona mogla razlikovati kada bismo dobivene modele iskoristili za predikciju na podatkovnim skupovima s još neviđenim podatcima. Razmatrajući QQ-plotove standardiziranih reziduala linearnog modela te rezultate provedenih Kolmogorov-Smirnovljevih testova, zaključili smo da reziduali ne pripadaju normalnoj razdiobi, što znači da dobivenim linearnim modelima ne možemo u potpunosti vjerovati. To nimalo ne čudi s obzirom na velik broj stršećih vrijednosti ocjena. Ipak, predikcije korisničkih ocjena možemo vršiti s velikom pouzdanošću, ali ne na temelju ocjena neke drugih kategorija, već na temelju korisničkih ocjena drugih korisnika koji su slični korisniku čije ocjene želimo predvidjeti. Predviđanje korisničkih ocjena na temelju ocjena drugih korisnika proveli smo primjenom metode collaborative filteringa koja se zasniva na kosinusnoj sličnosti vektora čiji su elementi korisničke ocjene pojedinih kategorija. Pokazali smo da ovom matematički relativno jednostavnom metodom možemo dobiti izvrsne rezultate na problemu predviđanja korisničkih ocjena. Ova je metoda, stoga, temelj sustava preporučivanja, što nije čudno s obzirnom na njezinu prikazanu moć i jednostavnost.
 
 
